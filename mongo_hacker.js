@@ -1,15 +1,18 @@
-/* 
- *
+/*
  * Mongo Hacker
  * Tyler J. Brock - 2012
- *
  */
 
+//Verbose shell
 setVerboseShell(true);
-setIndexParanoia(true);
-setAutoMulti(true);
 
-__indent = "  "
+//Automatically show information about index use in queries
+setIndexParanoia(true);
+
+//Automatically use multi updates
+setAutoMulti(false);
+
+__indent = "  ";
 
 __ansi = {
     csi: String.fromCharCode(0x1B) + '[',
@@ -25,23 +28,23 @@ __ansi = {
         yellow: '3',
         blue: '4',
         magenta: '5',
-        cyan: '6'  
+        cyan: '6'
     }
+};
+
+function setIndexParanoia( value ) {
+    if( value === undefined ) value = true;
+    _indexParanoia = value;
 }
 
-function setIndexParanoia( value ) { 
-    if( value == undefined ) value = true; 
-    _indexParanoia = value; 
-}
-
-function setAutoMulti( value ) { 
-    if( value == undefined ) value = true; 
-    _autoMulti = value; 
+function setAutoMulti( value ) {
+    if( value === undefined ) value = true;
+    _autoMulti = value;
 }
 
 function controlCode( parameters ) {
-    if ( parameters == undefined ) {
-    	parameters = "";
+    if ( parameters === undefined ) {
+        parameters = "";
     }
     else if (typeof(parameters) == 'object' && (parameters instanceof Array)) {
         parameters = parameters.join(';');
@@ -60,19 +63,19 @@ function colorize( string, color, bright, underline ) {
 
     params.push(code);
 
-    if ( bright == true ) params.push(__ansi.bright);
-    if ( underline == true ) params.push(__ansi.underline);
+    if ( bright === true ) params.push(__ansi.bright);
+    if ( underline === true ) params.push(__ansi.underline);
 
     return applyColorCode( string, params );
 }
 
 ObjectId.prototype.toString = function() {
     return this.str;
-}
+};
 
 ObjectId.prototype.tojson = function(indent, nolint) {
     return tojson(this);
-}
+};
 
 Date.prototype.tojson = function() {
 
@@ -83,24 +86,24 @@ Date.prototype.tojson = function() {
     var date = this['get'+UTC+'Date']().zeroPad(2);
     var hour = this['get'+UTC+'Hours']().zeroPad(2);
     var minute = this['get'+UTC+'Minutes']().zeroPad(2);
-    var sec = this['get'+UTC+'Seconds']().zeroPad(2)
+    var sec = this['get'+UTC+'Seconds']().zeroPad(2);
 
     if (this['get'+UTC+'Milliseconds']())
-        sec += '.' + this['get'+UTC+'Milliseconds']().zeroPad(3)
+        sec += '.' + this['get'+UTC+'Milliseconds']().zeroPad(3);
 
     var ofs = 'Z';
     if (!Date.printAsUTC) {
         var ofsmin = this.getTimezoneOffset();
-        if (ofsmin != 0){
+        if (ofsmin !== 0){
             ofs = ofsmin > 0 ? '-' : '+'; // This is correct
-            ofs += (ofsmin/60).zeroPad(2)
-            ofs += (ofsmin%60).zeroPad(2)
+            ofs += (ofsmin/60).zeroPad(2);
+            ofs += (ofsmin%60).zeroPad(2);
         }
     }
 
-    var date =  colorize('"' + year + month + date + 'T' + hour +':' + minute + ':' + sec + ofs + '"', "cyan");
-    return 'ISODate(' + date + ')';
-}
+    var date_result =  colorize('"' + year + month + date + 'T' + hour +':' + minute + ':' + sec + ofs + '"', "cyan");
+    return 'ISODate(' + date_result + ')';
+};
 
 Array.tojson = function( a , indent , nolint ){
     var lineEnding = nolint ? " " : "\n";
@@ -111,7 +114,7 @@ Array.tojson = function( a , indent , nolint ){
     if ( nolint )
         indent = "";
 
-    if (a.length == 0) {
+    if (a.length === 0) {
         return "[ ]";
     }
 
@@ -123,14 +126,14 @@ Array.tojson = function( a , indent , nolint ){
             s += "," + lineEnding;
         }
     }
-    if ( a.length == 0 ) {
+    if ( a.length === 0 ) {
         s += indent;
     }
 
     indent = indent.substring(__indent.length);
     s += lineEnding+indent+"]";
     return s;
-}
+};
 
 tojson = function( x, indent , nolint ) {
     if ( x === null )
@@ -143,53 +146,53 @@ tojson = function( x, indent , nolint ) {
         return 'ObjectId(' + colorize('"' + x.str + '"', "green", false, true) + ')';
     }
     
-    if (!indent) 
+    if (!indent)
         indent = "";
 
     switch ( typeof x ) {
-    case "string": {
-        var s = "\"";
-        for ( var i=0; i<x.length; i++ ){
-            switch (x[i]){
-                case '"': s += '\\"'; break;
-                case '\\': s += '\\\\'; break;
-                case '\b': s += '\\b'; break;
-                case '\f': s += '\\f'; break;
-                case '\n': s += '\\n'; break;
-                case '\r': s += '\\r'; break;
-                case '\t': s += '\\t'; break;
+        case "string":
+            var s = "\"";
+            for ( var i=0; i < x.length; i++ ){
+                switch (x[i]) {
+                    case '"': s += '\\"'; break;
+                    case '\\': s += '\\\\'; break;
+                    case '\b': s += '\\b'; break;
+                    case '\f': s += '\\f'; break;
+                    case '\n': s += '\\n'; break;
+                    case '\r': s += '\\r'; break;
+                    case '\t': s += '\\t'; break;
 
-                default: {
-                    var code = x.charCodeAt(i);
-                    if (code < 0x20){
-                        s += (code < 0x10 ? '\\u000' : '\\u00') + code.toString(16);
-                    } else {
-                        s += x[i];
-                    }
+                    default:
+                        var code = x.charCodeAt(i);
+                        if (code < 0x20){
+                            s += (code < 0x10 ? '\\u000' : '\\u00') + code.toString(16);
+                        } else {
+                            s += x[i];
+                        }
+                    
                 }
             }
-        }
-        s += "\""
-        return colorize(s, "green", true);
-    }
-    case "number":
-        return colorize(x, "red") 
-    case "boolean":
-        return colorize("" + x, "blue");
-    case "object": {
-        var s = tojsonObject( x, indent , nolint );
-        if ( ( nolint == null || nolint == true ) && s.length < 80 && ( indent == null || indent.length == 0 ) ){
-            s = s.replace( /[\s\r\n ]+/gm , " " );
-        }
-        return s;
-    }
-    case "function":
-        return colorize(x.toString(), "magenta")
-    default:
-        throw "tojson can't handle type " + ( typeof x );
+            s += "\"";
+            return colorize(s, "green", true);
+        
+        case "number":
+            return colorize(x, "red");
+        case "boolean":
+            return colorize("" + x, "blue");
+        case "object":
+            var s = tojsonObject( x, indent , nolint );
+            if ( ( nolint === null || nolint === true ) && s.length < 80 && ( indent === null || indent.length === 0 ) )
+                s = s.replace( /[\s\r\n ]+/gm , " " );
+            
+            return s;
+        
+        case "function":
+            return colorize(x.toString(), "magenta");
+        default:
+            throw "tojson can't handle type " + ( typeof x );
     }
     
-}
+};
 
 tojsonObject = function( x, indent , nolint ) {
     var lineEnding = nolint ? " " : "\n";
@@ -197,7 +200,7 @@ tojsonObject = function( x, indent , nolint ) {
     
     assert.eq( ( typeof x ) , "object" , "tojsonObject needs object, not [" + ( typeof x ) + "]" );
 
-    if (!indent) 
+    if (!indent)
         indent = "";
     
     if ( typeof( x.tojson ) == "function" && x.tojson != tojson ) {
@@ -219,8 +222,8 @@ tojsonObject = function( x, indent , nolint ) {
     indent += tabSpace;
     
     var total = 0;
-    for ( var k in x ) total++;
-    if ( total == 0 ) {
+    for ( var j in x ) total++;
+    if ( total === 0 ) {
         s += indent + lineEnding;
     }
 
@@ -245,7 +248,7 @@ tojsonObject = function( x, indent , nolint ) {
     // pop one level of indent
     indent = indent.substring(__indent.length);
     return s + indent + "}";
-}
+};
 
 // Hardcode multi update -- now you only need to remember upsert
 DBCollection.prototype.update = function( query , obj , upsert, multi ) {
@@ -255,7 +258,7 @@ DBCollection.prototype.update = function( query , obj , upsert, multi ) {
     var firstKey = null;
     for (var k in obj) { firstKey = k; break; }
 
-    if (firstKey != null && firstKey[0] == '$') {
+    if (firstKey !== null && firstKey[0] == '$') {
         // for mods we only validate partially, for example keys may have dots
         this._validateObject( obj );
     } else {
@@ -263,7 +266,7 @@ DBCollection.prototype.update = function( query , obj , upsert, multi ) {
         this._validateForStorage( obj );
     }
 
-    // can pass options via object for improved readability    
+    // can pass options via object for improved readability
     if ( typeof(upsert) === 'object' ) {
         assert( multi === undefined, "Fourth argument must be empty when specifying upsert and multi with an object." );
 
@@ -275,42 +278,42 @@ DBCollection.prototype.update = function( query , obj , upsert, multi ) {
     this._db._initExtraInfo();
     this._mongo.update( this._fullName , query , obj , upsert ? true : false , _autoMulti ? true : multi );
     this._db._getExtraInfo("Updated");
-}
+};
 
 // Override group because map/reduce style is deprecated
 DBCollection.prototype.group = function( name, group_field, operation, op_value, filter ) {
     var ops = [];
     var group_op = { $group: { _id: '$' + group_field } };
 
-    if (filter != undefined) {
-        ops.push({ '$match': filter })
+    if (filter !== undefined) {
+        ops.push({ '$match': filter });
     }
   
     group_op['$group'][name] = { };
-    group_op['$group'][name]['$' + operation] = op_value
+    group_op['$group'][name]['$' + operation] = op_value;
     ops.push(group_op);
 
     return this.aggregate(ops);
-}
+};
 
 // Function that groups and counts by group after applying filter
 DBCollection.prototype.gcount = function( group_field, filter ) {
     return this.group('count', group_field, 'sum', 1, filter);
-}
+};
 
 // Function that groups and sums sum_field after applying filter
 DBCollection.prototype.gsum = function( group_field, sum_field, filter ) {
     return this.group('sum', group_field, 'sum', '$' + sum_field, filter);
-}
+};
 
 // Improve the default prompt with hostname, process type, and version
 prompt = function() {
     var serverstatus = db.serverStatus();
-    var host = serverstatus.host;
+    //var host = serverstatus.host;
     var process = serverstatus.process;
     var version = db.serverBuildInfo().version;
-    return host + "(" + process + "-" + version + ")>";
-}
+    return db + "(" + process + "-" + version + ")> ";
+};
 
 DBQuery.prototype.shellPrint = function(){
     try {
@@ -356,4 +359,4 @@ DBQuery.prototype.shellPrint = function(){
         print( e );
     }
 
-}
+};
