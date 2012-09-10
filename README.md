@@ -12,6 +12,8 @@ Link mongo_hacker.js to `.mongorc.js` in your home directory:
 ln -sf <mongo-hacker-dir>/mongo_hacker.js ~/.mongorc.js
 ```
 
+Note: This currently only works with the v2.2+ of shell (which you can use with earlier versions of the server safely)
+
 ## List of Enhancements
 
 ### Basic
@@ -94,11 +96,7 @@ db.users.insert([
 ``` js
 db.users.gcount("first_name")
 {
-	"result": [
-    {
-      "_id": null,
-      "count": 1
-    },
+  "result": [
     {
       "_id": "Jessica",
       "count": 1
