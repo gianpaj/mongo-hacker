@@ -143,7 +143,7 @@ tojson = function( x, indent , nolint ) {
         return colorize("undefined", "magenta", true);
 
     if ( x.isObjectId ) {
-        return 'ObjectId(' + colorize('"' + x.str + '"', "green", false, true) + ')';
+        return 'ObjectId(' + colorize('"' + x.str + '"', "blue", false, true) + ')';
     }
     
     if (!indent)
@@ -173,10 +173,10 @@ tojson = function( x, indent , nolint ) {
                 }
             }
             s += "\"";
-            return colorize(s, "green", true);
+            return colorize(s, "cyan");
         
         case "number":
-            return colorize(x, "red");
+            return colorize(x, "magenta");
         case "boolean":
             return colorize("" + x, "blue");
         case "object":
@@ -237,7 +237,7 @@ tojsonObject = function( x, indent , nolint ) {
         if ( val == DB.prototype || val == DBCollection.prototype )
             continue;
 
-        s += indent + colorize("\"" + k + "\"", "yellow") + ": " + tojson( val, indent , nolint );
+        s += indent + colorize("\"" + k + "\"", "cyan") + ": " + tojson( val, indent , nolint );
         if (num != total) {
             s += ",";
             num++;
