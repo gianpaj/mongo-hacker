@@ -1,6 +1,8 @@
 /*
  * Mongo Hacker
+ * MongoDB Shell Enhancements for Hackers
  * Tyler J. Brock - 2012
+ * http://tylerbrock.github.com/mongo-hacker
  */
 
 //Verbose shell
@@ -31,6 +33,15 @@ __ansi = {
         cyan: '6'
     }
 };
+
+if (_isWindows()) {
+  print("\nSorry! MongoDB Shell Enhancements for Hackers isn't compatible with Windows.\n");
+}
+
+var ver = db.version().split(".");
+if ( ver[0] <= parseInt("2") && ver[1] < parseInt("2") ) {
+  print(colorize("\nSorry! Mongo Shell version 2.2.x and above is required! Please upgrade.\n", "red", true));
+}
 
 function setIndexParanoia( value ) {
     if( value === undefined ) value = true;
@@ -281,7 +292,7 @@ DBCollection.prototype.update = function( query , obj , upsert, multi ) {
 };
 
 // Override group because map/reduce style is deprecated
-DBCollection.prototype.group = function( name, group_field, operation, op_value, filter ) {
+DBCollection.prototype.agg_group = function( name, group_field, operation, op_value, filter ) {
     var ops = [];
     var group_op = { $group: { _id: '$' + group_field } };
 
@@ -298,21 +309,26 @@ DBCollection.prototype.group = function( name, group_field, operation, op_value,
 
 // Function that groups and counts by group after applying filter
 DBCollection.prototype.gcount = function( group_field, filter ) {
-    return this.group('count', group_field, 'sum', 1, filter);
+    return this.agg_group('count', group_field, 'sum', 1, filter);
 };
 
 // Function that groups and sums sum_field after applying filter
 DBCollection.prototype.gsum = function( group_field, sum_field, filter ) {
-    return this.group('sum', group_field, 'sum', '$' + sum_field, filter);
+    return this.agg_group('sum', group_field, 'sum', '$' + sum_field, filter);
+};
+
+// Function that groups and averages avg_feld after applying filter
+DBCollection.prototype.gavg = function( group_field, avg_field, filter ) {
+    return this.agg_group('avg', group_field, 'avg', '$' + avg_field, filter);
 };
 
 // Improve the default prompt with hostname, process type, and version
 prompt = function() {
     var serverstatus = db.serverStatus();
-    //var host = serverstatus.host;
+    //var host = serverstatus.host.split('.')[0];
     var process = serverstatus.process;
     var version = db.serverBuildInfo().version;
-    return db + "(" + process + "-" + version + ")> ";
+    return '(' + process + '-' + version + ') ' + db + '> ';
 };
 
 DBQuery.prototype.shellPrint = function(){
@@ -324,6 +340,9 @@ DBQuery.prototype.shellPrint = function(){
             print( s );
             n++;
         }
+
+        var output = [];
+
         if (typeof _verboseShell !== 'undefined' && _verboseShell) {
             var time = new Date().getTime() - start;
             var slowms = this._db.setProfilingLevel().slowms;
@@ -333,7 +352,7 @@ DBQuery.prototype.shellPrint = function(){
             } else {
                 fetched += colorize(time + "ms", "green", true);
             }
-            print(fetched);
+            output.push(fetched);
         }
         if (typeof _indexParanoia !== 'undefined' && _indexParanoia) {
             var explain = this.clone();
@@ -342,18 +361,24 @@ DBQuery.prototype.shellPrint = function(){
             explain._limit = Math.abs(n._limit) * -1;
             var result = explain.next();
             var type = result.cursor;
+            var index_use = "Index[";
             if (type == "BasicCursor") {
-                print( colorize("No index used!", "red", true) );
+                index_use += colorize( "none", "red", true);
             } else {
-                print( "Index: " + colorize(result.cursor.substring(12), "green", true ) );
+                index_use += colorize( result.cursor.substring(12), "green", true );
             }
+            index_use += "]";
+            output.push(index_use);
         }
-        if ( this.hasNext() ){
+        if ( this.hasNext() ) {
             ___it___  = this;
+            output.push("More[" + colorize("true", "green", true) + "]");
         }
         else {
             ___it___  = null;
+            output.push("More[" + colorize("false", "red", true) + "]");
         }
+        print(output.join(" -- "));
    }
     catch ( e ){
         print( e );
