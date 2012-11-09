@@ -327,8 +327,26 @@ prompt = function() {
     var serverstatus = db.serverStatus();
     //var host = serverstatus.host.split('.')[0];
     var process = serverstatus.process;
-    var version = db.serverBuildInfo().version;
-    return '(' + process + '-' + version + ') ' + db + '> ';
+    var version = db.version();
+    var replSetMemberState = "";
+    // var setName;
+
+    // if in replicaSet mode
+    if ( serverstatus.repl ) {
+        if ( serverstatus.repl.ismaster === true ) {
+            replSetMemberState = 'PRIMARY:';
+        }
+        else if ( serverstatus.repl.secondary === true ) {
+            replSetMemberState = 'SECONDARY:';
+        }
+        else if ( serverstatus.repl.arbiterOnly === true ) {
+            replSetMemberState = 'ARBITER:';
+        }
+
+        // setName = db.isMaster().setName;
+    }
+
+    return '(' + process + '-' + version + ') ' + replSetMemberState + db + '> ';
 };
 
 DBQuery.prototype.shellPrint = function(){
