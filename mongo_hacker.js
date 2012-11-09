@@ -291,6 +291,22 @@ DBCollection.prototype.update = function( query , obj , upsert, multi ) {
     this._db._getExtraInfo("Updated");
 };
 
+// Hardcode multi update -- now you only need to remember upsert
+DBCollection.prototype.save = function (obj) {
+    if (obj === null || typeof obj == "undefined") {
+        throw "can't save a null";
+    }
+    if (typeof obj == "number" || typeof obj == "string") {
+        throw "can't save a number or string";
+    }
+    if (typeof obj._id == "undefined") {
+        obj._id = new ObjectId;
+        return this.insert(obj);
+    } else {
+        return this.update({_id:obj._id}, obj, upsert ? true : false);
+    }
+};
+
 // Override group because map/reduce style is deprecated
 DBCollection.prototype.agg_group = function( name, group_field, operation, op_value, filter ) {
     var ops = [];
