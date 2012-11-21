@@ -48,6 +48,11 @@ function setIndexParanoia( value ) {
     _indexParanoia = value;
 }
 
+function setAutoMulti( value ) {
+    if( value === undefined ) value = true;
+    _autoMulti = value;
+}
+
 function controlCode( parameters ) {
     if ( parameters === undefined ) {
         parameters = "";
