@@ -529,8 +529,3 @@ DBQuery.prototype.tabular = function(opts) {
     return output;
 };
 DBQuery.prototype.t = DBQuery.prototype.tabular;
-
-DBCollection.prototype.findOne_original = DBCollection.prototype.findOne;
-DBCollection.prototype.findOne = function(query, fields, options) {
-    return tojson_c(this.findOne_original(query, fields, options));
-};
