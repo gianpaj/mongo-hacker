@@ -14,6 +14,8 @@ setIndexParanoia(true);
 //Automatically use multi updates
 setAutoMulti(false);
 
+EDITOR='nano';
+
 __indent = "  ";
 
 var _tabular_defaults = {
