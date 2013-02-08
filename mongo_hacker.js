@@ -1,33 +1,13 @@
-/*
+/* 
+ *
  * Mongo Hacker
- * MongoDB Shell Enhancements for Hackers
- * Tyler J. Brock - 2012
+ * MongoDB Shell Enhancements for Hackers 
+ *
+ * Tyler J. Brock - 2013
+ *
  * http://tylerbrock.github.com/mongo-hacker
+ *
  */
-
-//Verbose shell
-setVerboseShell(true);
-
-//Automatically show information about index use in queries
-setIndexParanoia(true);
-
-//Automatically use multi updates
-setAutoMulti(false);
-
-EDITOR='nano';
-
-__indent = "  ";
-
-var _tabular_defaults = {
-    // How many rows to show by default
-    limit: 20,
-
-    // Columns longer than this will be truncated
-    maxlen: 50,
-
-    // Undefined field values will be output using this string
-    undef: ''
-};
 
 __ansi = {
     csi: String.fromCharCode(0x1B) + '[',
@@ -48,22 +28,35 @@ __ansi = {
 };
 
 if (_isWindows()) {
-  print("\nSorry! MongoDB Shell Enhancements for Hackers isn't compatible with Windows.\n");
+    print("\nSorry! MongoDB Shell Enhancements for Hackers isn't compatible with Windows.\n");
 }
 
-var ver = db.version().split(".");
-if ( ver[0] <= parseInt("2") && ver[1] < parseInt("2") ) {
-  print(colorize("\nSorry! Mongo Shell version 2.2.x and above is required! Please upgrade.\n", "red", true));
-}
+setVerboseShell(true);
+setIndexParanoia(true);
+
+DBQuery.prototype._prettyShell = true
+
+__indent = "  ";
+// Type of function for legacy UUID objects (BinData with subtype = 3) rendering
+// Values: "java", "c#", and "default"
+uuidType = "java";
 
 function setIndexParanoia( value ) {
     if( value === undefined ) value = true;
     _indexParanoia = value;
 }
 
-function setAutoMulti( value ) {
-    if( value === undefined ) value = true;
-    _autoMulti = value;
+function findCommand(query){
+    var regexp = new RegExp(query, "i");
+    var result = db.runCommand("listCommands");
+
+    var matches = [ ];
+    for (var command in result.commands) {
+        if (regexp.test(command)) {
+            matches.push(command);
+        }
+    }
+    return matches;
 }
 
 function controlCode( parameters ) {
@@ -93,19 +86,194 @@ function colorize( string, color, bright, underline ) {
     return applyColorCode( string, params );
 }
 
+function runMatch(cmd, args, regexp) {
+    clearRawMongoProgramOutput();
+    run(cmd, args);
+    var output = rawMongoProgramOutput();
+    return output.match(regexp);
+}
+
+function getEnv(env_var) {
+    var env_regex = new RegExp(env_var + '=(.*)');
+    return runMatch('env', '', env_regex)[1];
+};
+
+function getVersion() {
+    var regexp = /version: (\d).(\d).(\d)/;
+    return runMatch('mongo', '--version', regexp).slice(1, 4);
+};
+
 ObjectId.prototype.toString = function() {
     return this.str;
 };
 
-ObjectId.prototype.tojson_c = function(indent, nolint) {
-    return tojson_c(this);
+ObjectId.prototype.tojson = function(indent, nolint) {
+    return tojson(this);
 };
 
-DBRef.prototype.tojson_c = function(indent, nolint) {
-    return 'DBRef(' + '"' + this.$ref + '", ' + colorize('"' + this.$id + '"', "green", false, true) + ')';
+DBCollection.prototype.filter = function( filter ) {
+    return new DBQuery( this._mongo, this._db, this, this._fullName, this._massageObject( filter ) );
 };
 
-Date.prototype.tojson_c = function() {
+DBQuery.prototype._validate = function( o ){
+    var firstKey = null;
+    for (var k in o) { firstKey = k; break; }
+
+    if (firstKey !== null && firstKey[0] == '$') {
+        // for mods we only validate partially, for example keys may have dots
+        this._validateObject( o );
+    } else {
+        // we're basically inserting a brand new object, do full validation
+        this._validateForStorage( o );
+    }
+};
+
+DBQuery.prototype._validateObject = function( o ){
+    if (typeof(o) != "object")
+        throw "attempted to save a " + typeof(o) + " value.  document expected.";
+
+    if ( o._ensureSpecial && o._checkModify )
+        throw "can't save a DBQuery object";
+};
+
+DBQuery.prototype._validateForStorage = function( o ){
+    this._validateObject( o );
+    for ( var k in o ){
+        if ( k.indexOf( "." ) >= 0 ) {
+            throw "can't have . in field names [" + k + "]" ;
+        }
+
+        if ( k.indexOf( "$" ) === 0 && ! DBCollection._allowedFields[k] ) {
+            throw "field names cannot start with $ [" + k + "]";
+        }
+
+        if ( o[k] !== null && typeof( o[k] ) === "object" ) {
+            this._validateForStorage( o[k] );
+        }
+    }
+};
+
+DB.prototype._getExtraInfo = function(action) {
+    if ( typeof _verboseShell === 'undefined' || !_verboseShell ) {
+        __callLastError = true;
+        return;
+    }
+
+    // explicit w:1 so that replset getLastErrorDefaults aren't used here which would be bad.
+    var startTime = new Date().getTime();
+    var res = this.getLastErrorCmd(1);
+    if (res) {
+        if (res.err !== undefined && res.err !== null) {
+            // error occurred, display it
+            print(res.err);
+            return;
+        }
+
+        var info = action + " ";
+        // hack for inserted because res.n is 0
+        info += action != "Inserted" ? res.n : 1;
+        if (res.n > 0 && res.updatedExisting !== undefined) info += " " + (res.updatedExisting ? "existing" : "new");
+        info += " record(s) in ";
+        var time = new Date().getTime() - startTime;
+        var slowms = this.getProfilingStatus().slowms;
+        if (time > slowms) {
+            info += colorize(time + "ms", "red", true);
+        } else {
+            info += colorize(time + "ms", "green", true);
+        }
+        print(info);
+    }
+};
+
+DB.prototype.rename = function(newName) {
+    if(newName == this.getName() || newName.length === 0)
+        return;
+
+    this.copyDatabase(this.getName(), newName, "localhost");
+    this.dropDatabase();
+    db = this.getSiblingDB(newName);
+};
+
+DBQuery.prototype._checkMulti = function(){
+  if(this._limit > 0 || this._skip > 0){
+    var ids = this.clone().select({_id: 1}).map(function(o){return o._id;});
+    this._query['_id'] = {'$in': ids};
+    return true;
+  } else {
+    return false;
+  }
+};
+
+DBQuery.prototype.upsert = function( upsert ){
+    assert( upsert , "need an upsert object" );
+
+    this._validate(upsert);
+    this._db._initExtraInfo();
+    this._mongo.update( this._ns , this._query , upsert , true , false );
+    this._db._getExtraInfo("Upserted");
+};
+
+DBQuery.prototype.update = function( update ){
+    assert( update , "need an update object" );
+
+    this._checkMulti();
+    this._validate(update);
+    this._db._initExtraInfo();
+    this._mongo.update( this._ns , this._query , update , false , true );
+    this._db._getExtraInfo("Updated");
+};
+
+DBQuery.prototype.replace = function( replacement ){
+   assert( replacement , "need an update object" );
+
+   this._validate(replacement);
+   this._db._initExtraInfo();
+   this._mongo.update( this._ns , this._query , replacement , false , false );
+   this._db._getExtraInfo("Replaced");
+};
+
+DBQuery.prototype.remove = function(){
+    for ( var k in this._query ){
+        if ( k == "_id" && typeof( this._query[k] ) == "undefined" ){
+            throw "can't have _id set to undefined in a remove expression";
+        }
+    }
+
+    this._checkMulti();
+    this._db._initExtraInfo();
+    this._mongo.remove( this._ns , this._query , false );
+    this._db._getExtraInfo("Removed");
+};
+
+DBQuery.prototype.select = function( fields ){
+    this._fields = fields;
+    return this;
+};
+
+DBQuery.prototype.one = function(){
+    return this.limit(1)[0];
+};
+
+DBQuery.prototype.first = function(field){
+    var field = field || "$natural";
+    var sortBy = {};
+    sortBy[field] = 1;
+    return this.sort(sortBy).one();
+}
+
+DBQuery.prototype.reverse = function( field ){
+    var field = field || "$natural";
+    var sortBy = {};
+    sortBy[field] = -1;
+    return this.sort(sortBy);
+}
+
+DBQuery.prototype.last = function( field ){
+    var field = field || "$natural";
+    return this.reverse(field).one();
+}
+
+Date.prototype.tojson = function() {
 
     var UTC = Date.printAsUTC ? 'UTC' : '';
 
@@ -129,15 +297,11 @@ Date.prototype.tojson_c = function() {
         }
     }
 
-    var date_result =  colorize('"' + year + month + date + 'T' + hour +':' + minute + ':' + sec + ofs + '"', "cyan");
-    return 'ISODate(' + date_result + ')';
+    var isodate =  colorize('"' + [year, month, date].join('-') + 'T' + hour +':' + minute + ':' + sec + ofs + '"', "cyan");
+    return 'ISODate(' + isodate + ')';
 };
 
-NumberLong.prototype.tojson_c = function(indent , nolint) {
-    return colorize(this.toNumber().toString()+"L", "red");
-};
-
-Array.tojson_c = function( a , indent , nolint ){
+Array.tojson = function( a , indent , nolint ){
     var lineEnding = nolint ? " " : "\n";
 
     if (!indent)
@@ -153,7 +317,7 @@ Array.tojson_c = function( a , indent , nolint ){
     var s = "[" + lineEnding;
     indent += __indent;
     for ( var i=0; i<a.length; i++){
-        s += indent + tojson_c( a[i], indent , nolint );
+        s += indent + tojson( a[i], indent , nolint );
         if ( i < a.length - 1 ){
             s += "," + lineEnding;
         }
@@ -167,94 +331,193 @@ Array.tojson_c = function( a , indent , nolint ){
     return s;
 };
 
-tojson_c = function( x, indent , nolint ) {
+NumberLong.prototype.tojson = function() {
+    return 'NumberLong(' + colorize('"' + this.toString().match(/-?\d+/)[0] + '"', "red") + ')';
+};
+
+NumberInt.prototype.tojson = function() {
+    return 'NumberInt(' + colorize('"' + this.toString().match(/-?\d+/)[0] + '"', "red") + ')';
+};
+
+function base64ToHex(base64) {
+    var base64Digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+    var hexDigits = "0123456789abcdef";
+    var hex = "";
+    for (var i = 0; i < 24; ) {
+        var e1 = base64Digits.indexOf(base64[i++]);
+        var e2 = base64Digits.indexOf(base64[i++]);
+        var e3 = base64Digits.indexOf(base64[i++]);
+        var e4 = base64Digits.indexOf(base64[i++]);
+        var c1 = (e1 << 2) | (e2 >> 4);
+        var c2 = ((e2 & 15) << 4) | (e3 >> 2);
+        var c3 = ((e3 & 3) << 6) | e4;
+        hex += hexDigits[c1 >> 4];
+        hex += hexDigits[c1 & 15];
+        if (e3 != 64) {
+            hex += hexDigits[c2 >> 4];
+            hex += hexDigits[c2 & 15];
+        }
+        if (e4 != 64) {
+            hex += hexDigits[c3 >> 4];
+            hex += hexDigits[c3 & 15];
+        }
+    }
+    return hex;
+}
+
+function hexToBase64(hex) {
+    var base64Digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    var base64 = "";
+    var group;
+    for (var i = 0; i < 30; i += 6) {
+        group = parseInt(hex.substr(i, 6), 16);
+        base64 += base64Digits[(group >> 18) & 0x3f];
+        base64 += base64Digits[(group >> 12) & 0x3f];
+        base64 += base64Digits[(group >> 6) & 0x3f];
+        base64 += base64Digits[group & 0x3f];
+    }
+    group = parseInt(hex.substr(30, 2), 16);
+    base64 += base64Digits[(group >> 2) & 0x3f];
+    base64 += base64Digits[(group << 4) & 0x3f];
+    base64 += "==";
+    return base64;
+}
+
+var platformSpecificUuidModifications = {
+    "java": function (hex) {
+        var msb = hex.substr(0, 16);
+        var lsb = hex.substr(16, 16);
+        msb = msb.substr(14, 2) + msb.substr(12, 2) + msb.substr(10, 2) + msb.substr(8, 2)
+            + msb.substr(6, 2) + msb.substr(4, 2) + msb.substr(2, 2) + msb.substr(0, 2);
+        lsb = lsb.substr(14, 2) + lsb.substr(12, 2) + lsb.substr(10, 2) + lsb.substr(8, 2)
+            + lsb.substr(6, 2) + lsb.substr(4, 2) + lsb.substr(2, 2) + lsb.substr(0, 2);
+        return msb + lsb;
+    },
+    "c#": function (hex) {
+        return hex.substr(6, 2) + hex.substr(4, 2) + hex.substr(2, 2) + hex.substr(0, 2)
+            + hex.substr(10, 2) + hex.substr(8, 2) + hex.substr(14, 2) + hex.substr(12, 2)
+            + hex.substr(16, 16);
+    },
+    "default": function (hex) {
+        return hex;
+    }
+};
+
+function UUID(uuid, type) {
+    var hex = uuid.replace(/[{}-]/g, "");
+    var typeNum = 4;
+    if (type != undefined) {
+        typeNum = 3;
+        hex = platformSpecificUuidModifications[type](hex);
+    }
+    return new BinData(typeNum, hexToBase64(hex));
+}
+
+function uuidToString(uuid, uuidType) {
+    var hex = platformSpecificUuidModifications[uuidType](base64ToHex(uuid.base64()));
+    return hex.substr(0, 8) + '-' + hex.substr(8, 4) + '-' + hex.substr(12, 4)
+        + '-' + hex.substr(16, 4) + '-' + hex.substr(20, 12);
+}
+
+BinData.prototype.tojson = function(indent , nolint) {
+    if (this.subtype() === 3) {
+        return 'UUID(' + colorize('"' + uuidToString(this, uuidType) + '"', "cyan") + ', ' + colorize('"' + uuidType + '"', "cyan") +')'
+    } else if (this.subtype() === 4) {
+        return 'UUID(' + colorize('"' + uuidToString(this, "default") + '"', "cyan") + ')'
+    } else {
+        return 'BinData(' + colorize(this.subtype(), "red") + ', ' + colorize('"' + this.base64() + '"', "green", true) + ')';
+    }
+};
+
+tojson = function( x, indent , nolint ) {
     if ( x === null )
         return colorize("null", "red", true);
-    
+
     if ( x === undefined )
         return colorize("undefined", "magenta", true);
 
     if ( x.isObjectId ) {
-        return 'ObjectId(' + colorize('"' + x.str + '"', "blue", false, true) + ')';
+        return 'ObjectId(' + colorize('"' + x.str + '"', "green", false, true) + ')';
     }
-    
+
     if (!indent)
         indent = "";
 
+    var s;
     switch ( typeof x ) {
-        case "string":
-            var s = "\"";
-            for ( var i=0; i < x.length; i++ ){
-                switch (x[i]) {
-                    case '"': s += '\\"'; break;
-                    case '\\': s += '\\\\'; break;
-                    case '\b': s += '\\b'; break;
-                    case '\f': s += '\\f'; break;
-                    case '\n': s += '\\n'; break;
-                    case '\r': s += '\\r'; break;
-                    case '\t': s += '\\t'; break;
+    case "string": {
+        s = "\"";
+        for ( var i=0; i<x.length; i++ ){
+            switch (x[i]){
+                case '"': s += '\\"'; break;
+                case '\\': s += '\\\\'; break;
+                case '\b': s += '\\b'; break;
+                case '\f': s += '\\f'; break;
+                case '\n': s += '\\n'; break;
+                case '\r': s += '\\r'; break;
+                case '\t': s += '\\t'; break;
 
-                    default:
-                        var code = x.charCodeAt(i);
-                        if (code < 0x20){
-                            s += (code < 0x10 ? '\\u000' : '\\u00') + code.toString(16);
-                        } else {
-                            s += x[i];
-                        }
-                    
+                default: {
+                    var code = x.charCodeAt(i);
+                    if (code < 0x20){
+                        s += (code < 0x10 ? '\\u000' : '\\u00') + code.toString(16);
+                    } else {
+                        s += x[i];
+                    }
                 }
             }
-            s += "\"";
-            return colorize(s, "cyan");
-        
-        case "number":
-            return colorize(x, "magenta");
-        case "boolean":
-            return colorize("" + x, "blue");
-        case "object":
-            var s = tojsonObject_c( x, indent , nolint );
-            if ( ( nolint === null || nolint === true ) && s.length < 80 && ( indent === null || indent.length === 0 ) )
-                s = s.replace( /[\s\r\n ]+/gm , " " );
-            
-            return s;
-        
-        case "function":
-            return colorize(x.toString(), "magenta");
-        default:
-            throw "tojson can't handle type " + ( typeof x );
+        }
+        s += "\"";
+        return colorize(s, "green", true);
     }
-    
+    case "number":
+        return colorize(x, "red");
+    case "boolean":
+        return colorize("" + x, "blue");
+    case "object": {
+        s = tojsonObject( x, indent , nolint );
+        if ( ( nolint === null || nolint === true ) && s.length < 80 && ( indent === null || indent.length === 0 ) ){
+            s = s.replace( /[\s\r\n ]+/gm , " " );
+        }
+        return s;
+    }
+    case "function":
+        return colorize(x.toString(), "magenta");
+    default:
+        throw "tojson can't handle type " + ( typeof x );
+    }
+
 };
 
-tojsonObject_c = function( x, indent , nolint ) {
+tojsonObject = function( x, indent, nolint ) {
     var lineEnding = nolint ? " " : "\n";
     var tabSpace = nolint ? "" : __indent;
-    
+
     assert.eq( ( typeof x ) , "object" , "tojsonObject needs object, not [" + ( typeof x ) + "]" );
 
-    if (!indent)
+    if (!indent) 
         indent = "";
-    
-    if ( typeof( x.tojson ) == "function" && x.tojson != tojson_c ) {
-        return x.tojson_c(indent,nolint);
+
+    if ( typeof( x.tojson ) == "function" && x.tojson != tojson ) {
+        return x.tojson(indent,nolint);
     }
-    
-    if ( x.constructor && typeof( x.constructor.tojson ) == "function" && x.constructor.tojson != tojson_c ) {
-        return x.constructor.tojson_c( x, indent , nolint );
+
+    if ( x.constructor && typeof( x.constructor.tojson ) == "function" && x.constructor.tojson != tojson ) {
+        return x.constructor.tojson( x, indent , nolint );
     }
 
     if ( x.toString() == "[object MaxKey]" )
         return "{ $maxKey : 1 }";
     if ( x.toString() == "[object MinKey]" )
         return "{ $minKey : 1 }";
-    
+
     var s = "{" + lineEnding;
 
     // push one level of indent
     indent += tabSpace;
-    
+
     var total = 0;
-    for ( var j in x ) total++;
+    for ( var k in x ) total++;
     if ( total === 0 ) {
         s += indent + lineEnding;
     }
@@ -263,13 +526,13 @@ tojsonObject_c = function( x, indent , nolint ) {
     if ( typeof( x._simpleKeys ) == "function" )
         keys = x._simpleKeys();
     var num = 1;
-    for ( var k in keys ){
-        
-        var val = x[k];
+    for ( var key in keys ){
+
+        var val = x[key];
         if ( val == DB.prototype || val == DBCollection.prototype )
             continue;
 
-        s += indent + colorize("\"" + k + "\"", "cyan") + ": " + tojson_c( val, indent , nolint );
+        s += indent + colorize("\"" + key + "\"", "yellow") + ": " + tojson( val, indent , nolint );
         if (num != total) {
             s += ",";
             num++;
@@ -282,52 +545,6 @@ tojsonObject_c = function( x, indent , nolint ) {
     return s + indent + "}";
 };
 
-// Hardcode multi update -- now you only need to remember upsert
-DBCollection.prototype.update = function( query , obj , upsert, multi ) {
-    assert( query , "need a query" );
-    assert( obj , "need an object" );
-
-    var firstKey = null;
-    for (var k in obj) { firstKey = k; break; }
-
-    if (firstKey !== null && firstKey[0] == '$') {
-        // for mods we only validate partially, for example keys may have dots
-        this._validateObject( obj );
-    } else {
-        // we're basically inserting a brand new object, do full validation
-        this._validateForStorage( obj );
-    }
-
-    // can pass options via object for improved readability
-    if ( typeof(upsert) === 'object' ) {
-        assert( multi === undefined, "Fourth argument must be empty when specifying upsert and multi with an object." );
-
-        opts = upsert;
-        multi = opts.multi;
-        upsert = opts.upsert;
-    }
-
-    this._db._initExtraInfo();
-    this._mongo.update( this._fullName , query , obj , upsert ? true : false , _autoMulti ? true : multi );
-    this._db._getExtraInfo("Updated");
-};
-
-// Hardcode multi update -- now you only need to remember upsert
-DBCollection.prototype.save = function (obj) {
-    if (obj === null || typeof obj == "undefined") {
-        throw "can't save a null";
-    }
-    if (typeof obj == "number" || typeof obj == "string") {
-        throw "can't save a number or string";
-    }
-    if (typeof obj._id == "undefined") {
-        obj._id = new ObjectId;
-        return this.insert(obj);
-    } else {
-        return this.update({_id:obj._id}, obj, upsert ? true : false);
-    }
-};
-
 // Override group because map/reduce style is deprecated
 DBCollection.prototype.agg_group = function( name, group_field, operation, op_value, filter ) {
     var ops = [];
@@ -336,7 +553,7 @@ DBCollection.prototype.agg_group = function( name, group_field, operation, op_va
     if (filter !== undefined) {
         ops.push({ '$match': filter });
     }
-  
+
     group_op['$group'][name] = { };
     group_op['$group'][name]['$' + operation] = op_value;
     ops.push(group_op);
@@ -362,28 +579,17 @@ DBCollection.prototype.gavg = function( group_field, avg_field, filter ) {
 // Improve the default prompt with hostname, process type, and version
 prompt = function() {
     var serverstatus = db.serverStatus();
-    //var host = serverstatus.host.split('.')[0];
+    var host = serverstatus.host.split('.')[0];
     var process = serverstatus.process;
-    var version = db.version();
-    var replSetMemberState = "";
-    // var setName;
-
-    // if in replicaSet mode
-    if ( serverstatus.repl ) {
-        if ( serverstatus.repl.ismaster === true ) {
-            replSetMemberState = 'PRIMARY:';
-        }
-        else if ( serverstatus.repl.secondary === true ) {
-            replSetMemberState = 'SECONDARY:';
-        }
-        else if ( serverstatus.repl.arbiterOnly === true ) {
-            replSetMemberState = 'ARBITER:';
-        }
-
-        // setName = db.isMaster().setName;
+    var version = db.serverBuildInfo().version;
+    var repl_set = db._adminCommand({"replSetGetStatus": 1}).ok !== 0;
+    var rs_state = '';
+    if(repl_set) {
+        rs_state = db.isMaster().ismaster ? '[primary]' : '[secondary]';
     }
-
-    return '(' + process + '-' + version + ') ' + replSetMemberState + db + '> ';
+    var mongos = db.isMaster().msg == 'isdbgrid';
+    var state = mongos ? '' : rs_state;
+    return host + '(' + process + '-' + version + ')' + state + ' ' + db + '> ';
 };
 
 DBQuery.prototype.shellPrint = function(){
@@ -391,7 +597,7 @@ DBQuery.prototype.shellPrint = function(){
         var start = new Date().getTime();
         var n = 0;
         while ( this.hasNext() && n < DBQuery.shellBatchSize ){
-            var s = this._prettyShell ? tojson_c( this.next() ) : tojson_c( this.next() , "" , true );
+            var s = this._prettyShell ? tojson( this.next() ) : tojson( this.next() , "" , true );
             print( s );
             n++;
         }
@@ -400,7 +606,7 @@ DBQuery.prototype.shellPrint = function(){
 
         if (typeof _verboseShell !== 'undefined' && _verboseShell) {
             var time = new Date().getTime() - start;
-            var slowms = this._db.setProfilingLevel().slowms;
+            var slowms = this._db.getProfilingStatus().slowms;
             var fetched = "Fetched " + n + " record(s) in ";
             if (time > slowms) {
                 fetched += colorize(time + "ms", "red", true);
@@ -434,106 +640,8 @@ DBQuery.prototype.shellPrint = function(){
             output.push("More[" + colorize("false", "red", true) + "]");
         }
         print(output.join(" -- "));
-   }
+    }
     catch ( e ){
         print( e );
     }
-
 };
-
-_tabular_encode = function(obj, opts, tojson) {
-    if ( obj === undefined ) {
-        return opts.undef;
-    }
-    if ( obj instanceof ObjectId ) {
-        return obj.valueOf();
-    }
-    ret = tojson(obj, false, true);
-
-    if ( ret.length > opts.maxlen ) {
-        ret = ret.slice(0, opts.maxlen - 3) + '...';
-        ret = ret.replace("\t", "", 'g');
-    }
-
-    return ret;
-};
-DBQuery.prototype.tabular = function(opts) {
-    if ( typeof(opts) == 'object' ) {
-        opts.limit  = (typeof(opts.limit)  != 'undefined') ? opts.limit  : _tabular_defaults.limit;
-        opts.maxlen = (typeof(opts.maxlen) != 'undefined') ? opts.maxlen : _tabular_defaults.maxlen;
-        opts.undef  = (typeof(opts.undef)  != 'undefined') ? opts.undef  : _tabular_defaults.undef;
-    }
-    else if ( typeof(opts) == 'number' ) {
-        opts.limit  = opts;
-        opts.maxlen = _tabular_defaults.maxlen;
-        opts.undef  = _tabular_defaults.undef;
-    }
-    else {
-        opts = _tabular_defaults;
-    }
-
-    var field_length = { '_id': 24 };
-
-    var docs = this.limit(opts.limit).toArray();
-
-    docs.forEach(function(doc) {
-        var field;
-        for ( field in doc ) {
-            var value = _tabular_encode(doc[field], opts, tojson);
-            if ( !field_length[field] ) {
-                field_length[field] = field.length;
-            }
-            if ( field_length[field] < value.length ) {
-                field_length[field] = value.length;
-            }
-        }
-    });
-
-    var field;
-    var fields = [];
-    var output = '';
-
-    for ( field in field_length ) {
-        fields.push(field);
-    }
-
-    // Divider
-    var divider = '+';
-    fields.forEach(function(field) {
-        var width = field_length[field];
-        divider += Array(width+3).join('-');
-        divider += '+';
-    });
-
-    var header = '| ';
-    // Title row
-    fields.forEach(function(field) {
-        var width = field_length[field];
-        var lpad = Math.floor((width - field.length)/2);
-        var rpad = width - lpad - field.length;
-        header += Array(lpad+1).join(' ') + field + Array(rpad+1).join(' ');
-        header += ' | ';
-    });
-
-    output += divider + "\n";
-    output += header + "\n";
-    output += divider + "\n";
-
-    // Rows
-    docs.forEach(function(doc) {
-        var row = '| ';
-        fields.forEach(function(field) {
-            var value    = _tabular_encode(doc[field], opts, tojson);
-            var rawvalue = _tabular_encode(doc[field], opts, tojson);
-            var width = field_length[field];
-            var rpad = Math.floor(width - rawvalue.length);
-            row += value + Array(rpad+1).join(' ');
-            row += ' | ';
-        });
-        output += row + "\n";
-    });
-
-    output += divider + "\n";
-    return output;
-};
-DBQuery.prototype.t = DBQuery.prototype.tabular;
