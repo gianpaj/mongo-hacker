@@ -56,17 +56,14 @@ shellHelper.find = function (query) {
     if (query !== "") {
         var regexp = new RegExp(query, "i");
         var result = db.runCommand("listCommands");
-        var l=0;
         for (var command in result.commands) {
             var commandObj = result.commands[command];
-            var help = commandObj.help.replace(/\n+$/, "");
+            var help = commandObj.help.substring(0, commandObj.help.indexOf('\n'));
             if (regexp.test(command) || regexp.test(help)) {
-                
-                var numSpaces = 28 - command.length;
-                print("\""+command+"\"", Array(numSpaces).join(" "), "-", help);
+                var numSpaces = 30 - command.length;
+                print(colorize(command, 'green'), Array(numSpaces).join(" "), "-", help);
             }
         }
-        return "";
     }
 };
 
@@ -112,6 +109,18 @@ function getEnv(env_var) {
 function getVersion() {
     var regexp = /version: (\d).(\d).(\d)/;
     return runMatch('mongo', '--version', regexp).slice(1, 4);
+};
+
+function isMongos() {
+    return db.isMaster().msg == 'isdbgrid';
+};
+
+function getSlowms(){
+    if(!isMongos()){
+        return db.getProfilingStatus().slowms;
+    } else {
+        return 100;
+    }
 };
 
 ObjectId.prototype.toString = function() {
@@ -186,7 +195,7 @@ DB.prototype._getExtraInfo = function(action) {
         if (res.n > 0 && res.updatedExisting !== undefined) info += " " + (res.updatedExisting ? "existing" : "new");
         info += " record(s) in ";
         var time = new Date().getTime() - startTime;
-        var slowms = this.getProfilingStatus().slowms;
+        var slowms = getSlowms();
         if (time > slowms) {
             info += colorize(time + "ms", "red", true);
         } else {
@@ -596,10 +605,14 @@ prompt = function() {
     var repl_set = db._adminCommand({"replSetGetStatus": 1}).ok !== 0;
     var rs_state = '';
     if(repl_set) {
-        rs_state = db.isMaster().ismaster ? '[primary]' : '[secondary]';
+        members = rs.status().members;
+        for(var i = 0; i<members.length; i++){
+            if(members[i].self === true){
+                rs_state = '[' + members[i].stateStr + ']';
+            }
+        };
     }
-    var mongos = db.isMaster().msg == 'isdbgrid';
-    var state = mongos ? '' : rs_state;
+    var state = isMongos() ? '[mongos]' : rs_state;
     return host + '(' + process + '-' + version + ')' + state + ' ' + db + '> ';
 };
 
@@ -617,7 +630,7 @@ DBQuery.prototype.shellPrint = function(){
 
         if (typeof _verboseShell !== 'undefined' && _verboseShell) {
             var time = new Date().getTime() - start;
-            var slowms = this._db.getProfilingStatus().slowms;
+            var slowms = getSlowms();
             var fetched = "Fetched " + n + " record(s) in ";
             if (time > slowms) {
                 fetched += colorize(time + "ms", "red", true);
